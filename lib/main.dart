@@ -1,121 +1,117 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'core/constants/supabase_constants.dart';
+import 'app/routes.dart';
 
-void main() {
-  runApp(const MyApp());
+// ─── PUNTO DE ENTRADA ──────────────────────────────────────────────────────
+// El async es necesario porque Supabase necesita
+// inicializarse antes de que la app arranque
+void main() async {
+
+  // Garantiza que Flutter esté listo antes de inicializar plugins
+  // Siempre debe ser la primera línea si usas async en main()
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Inicializamos Supabase con nuestras credenciales
+  // A partir de aquí podemos usar Supabase en cualquier parte de la app
+  await Supabase.initialize(
+    url: SupabaseConstants.url,
+    anonKey: SupabaseConstants.anonKey,
+  );
+
+  // ProviderScope es el contenedor de Riverpod
+  // DEBE envolver toda la app para que los providers funcionen
+  runApp(
+    const ProviderScope(
+      child: SuccessApp(),
+    ),
+  );
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+// ─── WIDGET RAÍZ DE LA APP ────────────────────────────────────────────────
+// ConsumerWidget nos permite acceder a los providers de Riverpod
+class SuccessApp extends ConsumerWidget {
+  const SuccessApp({super.key});
 
-  // Este widget es la raíz de tu aplicación.
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Creamos el router aquí para que tenga acceso a ref
+    // y pueda leer el estado de autenticación
+    final router = createRouter(ref);
+
+    return MaterialApp.router(
+      // Nombre de la app
+      title: 'Success',
+
+      // Oculta el banner rojo de "DEBUG" en la esquina
+      debugShowCheckedModeBanner: false,
+
+      // ─── INTERNACIONALIZACIÓN ────────────────────────────────────────────
+      // Permite que la app soporte múltiples idiomas
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      // Idiomas soportados: Español e Inglés
+      supportedLocales: const [
+        Locale('es'),
+        Locale('en'),
+      ],
+
+      // ─── TEMA VISUAL ─────────────────────────────────────────────────────
       theme: ThemeData(
-        // Este es el tema de tu aplicación.
-        //
-        // PRUEBA ESTO: Ejecuta tu aplicación con "flutter run". Verás que la
-        // aplicación tiene una barra superior de color púrpura. Luego, sin
-        // cerrar la app, intenta cambiar el seedColor del colorScheme de abajo
-        // a Colors.green y ejecuta un "hot reload" (guarda los cambios o presiona
-        // el botón de hot reload en un IDE compatible con Flutter, o presiona
-        // "r" si usaste la línea de comandos).
-        //
-        // Nota que el contador no se reinicia a cero; el estado de la aplicación
-        // no se pierde durante el reload. Para reiniciar el estado, usa hot
-        // restart en su lugar.
-        //
-        // Esto también funciona para el código, no solo para valores: la mayoría
-        // de los cambios de código pueden probarse solo con hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // Este widget es la página principal de tu aplicación. Es un widget con estado,
-  // lo que significa que tiene un objeto State (definido abajo) que contiene
-  // campos que afectan cómo se ve.
-
-  // Esta clase es la configuración del estado. Contiene los valores (en este caso
-  // el título) que son proporcionados por el widget padre (en este caso MyApp)
-  // y utilizados por el método build del State. Los campos en una subclase de
-  // Widget siempre se marcan como "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // Esta llamada a setState le dice al framework de Flutter que algo ha
-      // cambiado en este State, lo que provoca que se vuelva a ejecutar el
-      // método build de abajo para que la interfaz refleje los valores
-      // actualizados. Si cambiáramos _counter sin llamar a setState(), el
-      // método build no se ejecutaría de nuevo y parecería que no pasó nada.
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Este método se vuelve a ejecutar cada vez que se llama a setState,
-    // por ejemplo, como se hace en el método _incrementCounter.
-    //
-    // El framework de Flutter está optimizado para que volver a ejecutar los
-    // métodos build sea rápido, por lo que puedes reconstruir cualquier parte
-    // que necesite actualizarse en lugar de cambiar widgets individualmente.
-    return Scaffold(
-      appBar: AppBar(
-        // PRUEBA ESTO: Intenta cambiar el color aquí por un color específico
-        // (Colors.amber, por ejemplo) y ejecuta un hot reload para ver cómo
-        // cambia el AppBar mientras los demás colores permanecen iguales.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Aquí tomamos el valor del objeto MyHomePage que fue creado por el
-        // método build de MyApp y lo usamos para establecer el título del AppBar.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center es un widget de diseño. Toma un solo hijo y lo posiciona
-        // en el centro de su widget padre.
-        child: Column(
-          // Column también es un widget de diseño. Toma una lista de widgets
-          // hijos y los organiza verticalmente. Por defecto, se ajusta al ancho
-          // de sus hijos e intenta ocupar toda la altura disponible.
-          //
-          // Column tiene varias propiedades para controlar cómo se dimensiona
-          // y cómo posiciona a sus hijos. Aquí usamos mainAxisAlignment para
-          // centrar los hijos verticalmente; el eje principal es el vertical
-          // porque las Column son verticales (el eje cruzado sería horizontal).
-          //
-          // PRUEBA ESTO: Activa el "debug painting" (elige la acción "Toggle Debug
-          // Paint" en el IDE o presiona "p" en la consola) para ver el esquema
-          // de cada widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('Has presionado el botón esta cantidad de veces:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+        // Color principal de la app: azul similar al de Facebook/LinkedIn
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF1877F2),
+          brightness: Brightness.light,
         ),
+        // Material Design 3: el más moderno de Flutter
+        useMaterial3: true,
+
+        // Fuente principal
+        fontFamily: 'Roboto',
+
+        // Estilo del AppBar
+        appBarTheme: const AppBarTheme(
+          centerTitle: false,
+          elevation: 0.5,
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+        ),
+
+        // Estilo de los botones principales
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF1877F2),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+
+        // Fondo general de la app
+        scaffoldBackgroundColor: const Color(0xFFF0F2F5),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Incrementar',
-        child: const Icon(Icons.add),
+
+      // Tema oscuro (respeta la preferencia del sistema)
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF1877F2),
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+        fontFamily: 'Roboto',
       ),
+
+      // Usa el tema del sistema (claro u oscuro)
+      themeMode: ThemeMode.system,
+
+      // ─── NAVEGACIÓN ──────────────────────────────────────────────────────
+      // RouterConfig conecta GoRouter con MaterialApp
+      routerConfig: router,
     );
   }
 }
