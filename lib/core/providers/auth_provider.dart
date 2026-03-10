@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
@@ -15,48 +16,52 @@ final authServiceProvider = Provider<AuthService>((ref) {
 });
 
 // ─── PROVIDER DEL ESTADO DE AUTENTICACIÓN ─────────────────────────────────
-// Escucha en tiempo real si el usuario está logueado o no
-// Es un StreamProvider porque Supabase nos da un Stream de cambios
-//
-// Posibles valores:
-//   AsyncData(session) → hay sesión activa
-//   AsyncData(null)    → no hay sesión
-//   AsyncLoading()     → verificando...
-//   AsyncError()       → algo salió mal
-final authStateProvider = StreamProvider<AuthState>((ref) {
-  return Supabase.instance.client.auth.onAuthStateChange;
+// Verifica si hay un usuario logueado (simple y directo)
+final authStateProvider = FutureProvider<bool>((ref) async {
+  debugPrint('[AuthState] Verificando sesión...');
+  
+  try {
+    final auth = Supabase.instance.client.auth;
+    final currentUser = auth.currentUser;
+    final isLoggedIn = currentUser != null;
+    
+    debugPrint('[AuthState] Sesión verificada: ${currentUser?.email ?? 'Sin usuario'} (isLoggedIn=$isLoggedIn)');
+    return isLoggedIn;
+  } catch (e) {
+    debugPrint('[AuthState] Error verificando sesión: $e');
+    return false;
+  }
 });
 
 // ─── PROVIDER DEL USUARIO ACTUAL ──────────────────────────────────────────
 // Mantiene el perfil completo del usuario logueado
-// Se actualiza automáticamente cuando el estado de auth cambia
-//
-// Ejemplo de uso en cualquier widget:
-//   final userAsync = ref.watch(currentUserProvider);
-//   userAsync.when(
-//     data: (user) => Text('Hola ${user?.username}'),
-//     loading: () => CircularProgressIndicator(),
-//     error: (e, _) => Text('Error'),
-//   );
 final currentUserProvider = FutureProvider<UserModel?>((ref) async {
-  // Escuchamos el estado de auth para reaccionar a cambios
-  final authState = ref.watch(authStateProvider);
+  try {
+    final currentUser = Supabase.instance.client.auth.currentUser;
 
-  return authState.when(
-    data: (state) async {
-      // Si hay sesión activa, traemos el perfil completo
-      if (state.session != null) {
-        final authService = ref.read(authServiceProvider);
-        return await authService.getUserProfile(
-          state.session!.user.id,
-        );
-      }
-      // Si no hay sesión, devolvemos null
+    if (currentUser == null) {
+      debugPrint('[CurrentUser] No hay usuario logueado');
       return null;
-    },
-    loading: () => null,
-    error: (_, __) => null,
-  );
+    }
+
+    debugPrint('[CurrentUser] Obteniendo perfil de ${currentUser.email}...');
+    final authService = ref.read(authServiceProvider);
+    final profile = await authService.getUserProfile(currentUser.id);
+    
+    if (profile != null) {
+      debugPrint('[CurrentUser] Perfil cargado: ${profile.username}');
+    } else {
+      debugPrint('[CurrentUser] Perfil es null (el usuario existe pero sin datos completos)');
+    }
+    
+    return profile;
+  } catch (e) {
+    // En lugar de fallar, devolvemos null para que la UI no se bloquee
+    // El usuario está logueado, aunque no podamos cargar su perfil
+    debugPrint('[CurrentUser] Error (NO CRÍTICO): $e');
+    debugPrint('[CurrentUser] → Continuando sin perfil. Verifica las políticas RLS en Supabase');
+    return null;
+  }
 });
 
 // ─── NOTIFIER DEL USUARIO ─────────────────────────────────────────────────

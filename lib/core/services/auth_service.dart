@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
 
@@ -22,6 +23,7 @@ class AuthService {
     required String role,
   }) async {
     // Paso 1: Crear la cuenta en Supabase Auth
+    // Usamos `userMetadata` (API actual) en lugar de `data`.
     final response = await _supabase.auth.signUp(
       email: email,
       password: password,
@@ -31,18 +33,38 @@ class AuthService {
       },
     );
 
-    // Paso 2: Si se creó el usuario, guardar su perfil en la tabla users
-    if (response.user != null) {
-      await _supabase.from('users').insert({
-        'id': response.user!.id,   // Mismo ID que Supabase Auth
-        'email': email,
-        'username': username,
-        'role': role,
-        'language': 'es',
-      });
+    // A veces la respuesta contiene el usuario en `response.user`,
+    // otras veces (confirmación por email) el usuario queda en
+    // `auth.currentUser`. Comprobamos ambos.
+    final createdUser = response.user ?? _supabase.auth.currentUser;
+
+    // Paso 2: Si se creó el usuario, intentamos guardar el perfil en la tabla users
+    if (createdUser != null) {
+      try {
+        await _supabase.from('users').insert({
+          'id': createdUser.id, // Mismo ID que Supabase Auth
+          'email': email,
+          'username': username,
+          'role': role,
+          'language': 'es',
+        });
+      } catch (e, st) {
+        // Si la tabla no existe u ocurre otro error de PostgREST, lo registramos
+        debugPrint('Error al insertar perfil de usuario: $e');
+        debugPrintStack(stackTrace: st);
+        // No interrumpimos el registro; la cuenta de auth ya fue creada.
+        // Devolveremos null en lugar de intentar leer un perfil inexistente.
+      }
 
       // Paso 3: Traer el perfil recién creado y devolverlo como UserModel
-      return await getUserProfile(response.user!.id);
+      // Si la inserción falló, esta llamada también puede lanzar; la capturamos
+      try {
+        return await getUserProfile(createdUser.id);
+      } catch (e, st) {
+        debugPrint('Error al leer perfil tras registro: $e');
+        debugPrintStack(stackTrace: st);
+        return null;
+      }
     }
 
     return null;
@@ -60,17 +82,28 @@ class AuthService {
     required String email,
     required String password,
   }) async {
-    final response = await _supabase.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
+    debugPrint('signIn: iniciando con email=$email');
+    try {
+      final response = await _supabase.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+      
+      debugPrint('signIn: respuesta obtenida, usuario=${response.user?.id}');
 
-    // Si el login fue exitoso, traemos el perfil completo de la tabla users
-    if (response.user != null) {
-      return await getUserProfile(response.user!.id);
+      // Si el login fue exitoso, traemos el perfil completo de la tabla users
+      if (response.user != null) {
+        debugPrint('signIn: obteniendo perfil para ${response.user!.id}');
+        return await getUserProfile(response.user!.id);
+      }
+      
+      debugPrint('signIn: respuesta.user es null');
+      return null;
+    } catch (e, st) {
+      debugPrint('signIn: error capturado: $e');
+      debugPrintStack(stackTrace: st);
+      rethrow;
     }
-
-    return null;
   }
 
   // ─── LOGOUT ────────────────────────────────────────────────────────────────
@@ -92,12 +125,14 @@ class AuthService {
   // Trae el perfil completo de un usuario desde la tabla users
   // Se usa internamente después del login y registro
   Future<UserModel?> getUserProfile(String userId) async {
+    // maybesingle no lanza excepción si no existe el registro, devuelve null
     final response = await _supabase
         .from('users')
         .select()
         .eq('id', userId)
-        .single();       // .single() porque solo existe un usuario con ese ID
+        .maybeSingle();
 
+    if (response == null) return null;
     return UserModel.fromJson(response);
   }
 
@@ -127,13 +162,19 @@ class AuthService {
   // Ejemplo de uso:
   //   bool disponible = await authService.isUsernameAvailable('juanperez');
   Future<bool> isUsernameAvailable(String username) async {
-    final response = await _supabase
-        .from('users')
-        .select('username')
-        .eq('username', username)
-        .maybeSingle();  // maybeSingle() devuelve null si no encuentra nada
+    try {
+      final response = await _supabase
+          .from('users')
+          .select('username')
+          .eq('username', username)
+          .maybeSingle();  // maybeSingle() devuelve null si no encuentra nada
 
-    return response == null;  // Si no hay resultado, el username está libre
+      return response == null;  // Si no hay resultado, el username está libre
+    } catch (e) {
+      // En caso de error (tabla inexistente, permisos, etc) lo propagamos
+      debugPrint('Error verificando disponibilidad de usuario: $e');
+      rethrow;
+    }
   }
 
   // ─── ACTUALIZAR PERFIL ─────────────────────────────────────────────────────
