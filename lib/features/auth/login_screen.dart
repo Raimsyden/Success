@@ -82,9 +82,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       debugPrint('[Login] signIn completado, navegando a /feed');
       // Si el login fue exitoso, GoRouter redirige automáticamente al feed
       
+      debugPrint('[Login] signIn exitoso, navegando a /feed');
       if (mounted) {
-        debugPrint('[Login] llamando context.go(/feed)');
-        context.go('/feed');
+        ref.invalidate(authStateProvider);
+        ref.invalidate(currentUserProvider);
+        await Future.microtask(() {});
+        if (mounted) context.go('/feed');
       }
 
     } catch (e) {

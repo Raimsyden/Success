@@ -1,0 +1,89 @@
+[
+  {
+    "_id": {"$uuid": "ab143962-06a1-4192-961e-6162823cf266"},
+    "NombrePais": "Colombia",
+    "Activo": true,
+    "Actualiza": {"$date": "2026-03-14T10:41:41.389Z"},
+    "Departamentos": [
+      {
+        "_id": {"$uuid": "78ba51e1-0ec6-49ff-96b3-9cef51f1a1eb"},
+        "NombreDepartamento": "Antioquia",
+        "Activo": true,
+        "Actualiza": {"$date": "2026-03-21T11:01:36.127Z"},
+        "Ciudades": [
+          {
+            "_id": {"$uuid": "5995ce53-e543-444c-a403-73bd30c1014a"},
+            "NombreCiudad": "Medellín",
+            "Activo": true,
+            "Actualiza": {"$date": "2026-03-21T11:01:52.236Z"}
+          }
+        ]
+      },
+      {
+        "_id": {"$uuid": "3f2e4bf2-57ec-44be-ae10-60d3cec21b30"},
+        "NombreDepartamento": "Valle del Cauca",
+        "Activo": true,
+        "Actualiza": {"$date": "2026-03-21T11:01:36.127Z"},
+        "Ciudades": [
+          {
+            "_id": {"$uuid": "f8d75bc4-7fb5-433a-bada-bd65a6484084"},
+            "NombreCiudad": "Cali",
+            "Activo": true,
+            "Actualiza": {"$date": "2026-03-21T11:01:52.236Z"}
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "_id": {"$uuid": "cfec4bea-3f73-425b-873b-a2bec7b100d2"},
+    "NombrePais": "Panama",
+    "Activo": true,
+    "Actualiza": {"$date": "2026-03-14T10:41:41.389Z"},
+    "Departamentos": [
+      {
+        "_id": {"$uuid": "baa71c53-ab80-4b31-882b-0a165cd51be1"},
+        "NombreDepartamento": "Panamá",
+        "Activo": true,
+        "Actualiza": {"$date": "2026-03-21T11:01:36.127Z"},
+        "Ciudades": [
+          {
+            "_id": {"$uuid": "a06cf77b-e62a-4bb2-a5ad-3256f2217a67"},
+            "NombreCiudad": "Ciudad de Panamá",
+            "Activo": true,
+            "Actualiza": {"$date": "2026-03-21T11:01:52.236Z"}
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "_id": {"$uuid": "ee9c253e-f545-46ad-b587-27b1132e646f"},
+    "NombrePais": "Brasil",
+    "Activo": true,
+    "Actualiza": {"$date": "2026-03-14T10:51:17.817Z"},
+    "Departamentos": [
+      {
+        "_id": {"$uuid": "25726c75-4d7f-45fa-b8e4-51962041fdd0"},
+        "NombreDepartamento": "Ciudad de México",
+        "Activo": true,
+        "Actualiza": {"$date": "2026-03-21T11:01:36.127Z"},
+        "Ciudades": [
+          {
+            "_id": {"$uuid": "e77c647c-1932-4503-b5c0-33ff6836ece5"},
+            "NombreCiudad": "CDMX",
+            "Activo": true,
+            "Actualiza": {"$date": "2026-03-21T11:01:52.236Z"}
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "_id": {"$uuid": "b4664a13-2c15-4d45-92d4-6a77376fb7af"},
+    "NombrePais": "España",
+    "Activo": true,
+    "Actualiza": {"$date": "2026-03-14T11:04:49.437Z"},
+    "Departamentos": []
+  }
+]

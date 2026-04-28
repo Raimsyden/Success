@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 // ─── PANTALLA DE CARGA ─────────────────────────────────────────────────────
 class SplashScreen extends StatelessWidget {
-  const SplashScreen();
+  const SplashScreen({super.key});
 
   @override
   Widget build(BuildContext context) {

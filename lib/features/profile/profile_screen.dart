@@ -10,23 +10,65 @@ import '../../core/providers/auth_provider.dart';
 import '../../core/services/post_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../core/services/auth_service.dart';
+import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../messages/messages_screen.dart';
 
 // ─── PROVIDERS ────────────────────────────────────────────────────────────
-// posts del usuario
 final userPostsProvider = FutureProvider.family<List<PostModel>, String>(
   (ref, userId) => PostService().getUserPosts(userId),
 );
 
-// proveedor para cargar cualquier perfil de usuario por id
 final userProfileProvider = FutureProvider.family<UserModel?, String>(
   (ref, userId) async {
-    // usamos el servicio de autenticación porque ya sabe cómo leer el perfil
     return await AuthService().getUserProfile(userId);
   },
 );
-class ProfileScreen extends ConsumerStatefulWidget {
-  final String? userId; // null = perfil propio
 
+final profileStatsProvider = FutureProvider.family<Map<String, int>, String>(
+  (ref, userId) async {
+    final client = Supabase.instance.client;
+    final results = await Future.wait([
+      client.from('posts').select('id').eq('author_id', userId).eq('is_public', true),
+      client.from('followers').select('id').eq('following_id', userId),
+      client.from('followers').select('id').eq('follower_id', userId),
+    ]);
+    return {
+      'posts': (results[0] as List).length,
+      'followers': (results[1] as List).length,
+      'following': (results[2] as List).length,
+    };
+  },
+);
+
+final isFollowingProvider = FutureProvider.family<bool, String>(
+  (ref, userId) async {
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    if (currentUserId == null) return false;
+    final result = await Supabase.instance.client
+        .from('followers')
+        .select('id')
+        .eq('follower_id', currentUserId)
+        .eq('following_id', userId)
+        .maybeSingle();
+    return result != null;
+  },
+);
+
+final userVentureProvider = FutureProvider.family<Map<String, dynamic>?, String>(
+  (ref, userId) async {
+    final response = await Supabase.instance.client
+        .from('ventures')
+        .select()
+        .eq('owner_id', userId)
+        .maybeSingle();
+    return response;
+  },
+);
+
+// ─── PANTALLA ─────────────────────────────────────────────────────────────
+class ProfileScreen extends ConsumerStatefulWidget {
+  final String? userId;
   const ProfileScreen({super.key, this.userId});
 
   @override
@@ -37,7 +79,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with SingleTickerProviderStateMixin {
 
   late TabController _tabController;
-  bool _isFollowing = false;
 
   @override
   void initState() {
@@ -51,17 +92,114 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     super.dispose();
   }
 
-  // ¿Es el perfil del usuario logueado?
   bool get _isOwnProfile {
     final currentUser = ref.read(authNotifierProvider).value;
-    // si no se pasó ningún id estamos viendo nuestro propio perfil
-    // o si el id coincide con el del usuario logueado
     return widget.userId == null || widget.userId == currentUser?.id;
+  }
+
+  Future<void> _toggleFollow(String userId) async {
+    final client = Supabase.instance.client;
+    final currentUserId = client.auth.currentUser?.id;
+    if (currentUserId == null) return;
+
+    final existing = await client
+        .from('followers')
+        .select('id')
+        .eq('follower_id', currentUserId)
+        .eq('following_id', userId)
+        .maybeSingle();
+
+    if (existing != null) {
+      await client.from('followers').delete()
+          .eq('follower_id', currentUserId)
+          .eq('following_id', userId);
+    } else {
+      await client.from('followers').insert({
+        'follower_id': currentUserId,
+        'following_id': userId,
+      });
+    }
+
+    ref.invalidate(isFollowingProvider(userId));
+    ref.invalidate(profileStatsProvider(userId));
+  }
+
+  Future<void> _openChat(BuildContext context, String otherUserId) async {
+    final client = Supabase.instance.client;
+    final currentUserId = client.auth.currentUser?.id;
+    if (currentUserId == null) return;
+
+    final existing = await client
+        .from('conversations')
+        .select()
+        .or(
+          'and(participant_one.eq.$currentUserId,participant_two.eq.$otherUserId),'
+          'and(participant_one.eq.$otherUserId,participant_two.eq.$currentUserId)',
+        )
+        .maybeSingle();
+
+    Map<String, dynamic> conversation;
+
+    if (existing != null) {
+      conversation = existing;
+    } else {
+      final created = await client
+          .from('conversations')
+          .insert({
+            'participant_one': currentUserId,
+            'participant_two': otherUserId,
+          })
+          .select()
+          .single();
+      conversation = created;
+    }
+
+    if (!context.mounted) return;
+
+    final otherUser = await client
+        .from('users')
+        .select('id, username, avatar_url')
+        .eq('id', otherUserId)
+        .single();
+
+    if (!context.mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          conversation: ConversationModel(
+            id: conversation['id'],
+            participantOne: conversation['participant_one'],
+            participantTwo: conversation['participant_two'],
+            lastMessage: conversation['last_message'],
+            lastMessageAt: conversation['last_message_at'] != null
+                ? DateTime.parse(conversation['last_message_at'])
+                : null,
+            createdAt: DateTime.parse(conversation['created_at']),
+            otherUserId: otherUser['id'],
+            otherUsername: otherUser['username'],
+            otherAvatarUrl: otherUser['avatar_url'],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showEditProfile(UserModel user) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.backgroundCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _EditProfileSheet(user: user),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // normalizamos el parámetro recibido: cadena vacía se trata como null
     final viewedUserId = (widget.userId != null && widget.userId!.isEmpty)
         ? null
         : widget.userId;
@@ -76,50 +214,41 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         loading: () => const Center(
           child: CircularProgressIndicator(color: AppColors.peach),
         ),
-        error: (e, _) {
-          debugPrint('[Profile] error loading user: $e');
-          return Center(
-            child: Text(
-              'Error cargando perfil',
-              style: TextStyle(color: AppColors.cream.withOpacity(0.5)),
-            ),
-          );
-        },
+        error: (e, _) => Center(
+          child: Text('Error cargando perfil',
+              style: TextStyle(color: AppColors.cream.withOpacity(0.5))),
+        ),
         data: (user) {
           debugPrint('[Profile] userId=${viewedUserId ?? '[me]'} user=$user');
           if (user == null) {
             return Center(
-              child: Text(
-                'Perfil no disponible',
-                style: TextStyle(color: AppColors.cream.withOpacity(0.5)),
-              ),
+              child: Text('Perfil no disponible',
+                  style: TextStyle(color: AppColors.cream.withOpacity(0.5))),
             );
           }
+
+          final isFollowingAsync = _isOwnProfile
+              ? null
+              : ref.watch(isFollowingProvider(user.id));
+
           return NestedScrollView(
             headerSliverBuilder: (ctx, _) => [
               _ProfileSliverHeader(
                 user: user,
                 isOwnProfile: _isOwnProfile,
-                isFollowing: _isFollowing,
-                onFollowTap: () {
-                  setState(() => _isFollowing = !_isFollowing);
-                  // mostrar mensaje oportuno
-                  final action = _isFollowing ? 'Siguiendo' : 'Dejar de seguir';
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('$action a @${user.username}')),
-                  );
-                },
+                isFollowing: isFollowingAsync?.value ?? false,
+                onFollowTap: () => _toggleFollow(user.id),
                 onEditTap: () => _showEditProfile(user),
+                onMessageTap: _isOwnProfile
+                    ? null
+                    : () => _openChat(context, user.id),
                 tabController: _tabController,
               ),
             ],
             body: TabBarView(
               controller: _tabController,
               children: [
-                // Pestaña publicaciones
                 _PostsGrid(userId: viewedUserId ?? user.id),
-
-                // Pestaña venture/productos
                 _VentureTab(user: user),
               ],
             ),
@@ -128,28 +257,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
       ),
     );
   }
-
-  // ─── MODAL DE EDITAR PERFIL ───────────────────────────────────────────
-  void _showEditProfile(UserModel user) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.backgroundCard,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => _EditProfileSheet(user: user),
-    );
-  }
 }
 
 // ─── HEADER CON SLIVER ────────────────────────────────────────────────────
-class _ProfileSliverHeader extends StatelessWidget {
+class _ProfileSliverHeader extends ConsumerWidget {
   final UserModel user;
   final bool isOwnProfile;
   final bool isFollowing;
   final VoidCallback onFollowTap;
   final VoidCallback onEditTap;
+  final VoidCallback? onMessageTap;
   final TabController tabController;
 
   const _ProfileSliverHeader({
@@ -159,10 +276,56 @@ class _ProfileSliverHeader extends StatelessWidget {
     required this.onFollowTap,
     required this.onEditTap,
     required this.tabController,
+    this.onMessageTap,
   });
 
+  void _showMenu(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.backgroundCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout_rounded, color: Colors.redAccent),
+              title: const Text(
+                'Cerrar sesión',
+                style: TextStyle(
+                  color: Colors.redAccent,
+                  fontFamily: 'DM Sans',
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+                await ref.read(authNotifierProvider.notifier).signOut();
+                ref.invalidate(authStateProvider);
+                await Future.microtask(() {});
+                if (context.mounted) context.go('/login');
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return SliverAppBar(
       expandedHeight: 380,
       pinned: true,
@@ -170,13 +333,20 @@ class _ProfileSliverHeader extends StatelessWidget {
       foregroundColor: AppColors.cream,
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_ios_new_rounded),
-        onPressed: () => Navigator.pop(context),
+        onPressed: () {
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/feed');
+          }
+        },
       ),
       actions: [
-        IconButton(
-          icon: const Icon(Icons.more_horiz),
-          onPressed: () {},
-        ),
+        if (isOwnProfile)
+          IconButton(
+            icon: const Icon(Icons.more_horiz),
+            onPressed: () => _showMenu(context, ref),
+          ),
       ],
       flexibleSpace: FlexibleSpaceBar(
         collapseMode: CollapseMode.pin,
@@ -186,6 +356,7 @@ class _ProfileSliverHeader extends StatelessWidget {
           isFollowing: isFollowing,
           onFollowTap: onFollowTap,
           onEditTap: onEditTap,
+          onMessageTap: onMessageTap,
         ),
       ),
       bottom: PreferredSize(
@@ -221,6 +392,7 @@ class _ProfileInfo extends StatelessWidget {
   final bool isFollowing;
   final VoidCallback onFollowTap;
   final VoidCallback onEditTap;
+  final VoidCallback? onMessageTap;
 
   const _ProfileInfo({
     required this.user,
@@ -228,6 +400,7 @@ class _ProfileInfo extends StatelessWidget {
     required this.isFollowing,
     required this.onFollowTap,
     required this.onEditTap,
+    this.onMessageTap,
   });
 
   @override
@@ -241,13 +414,11 @@ class _ProfileInfo extends StatelessWidget {
         right: 20,
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-
-          // Avatar con opción de cambiar foto si es propio
           _ProfileAvatar(user: user, isOwnProfile: isOwnProfile),
           const SizedBox(height: 16),
 
-          // Nombre
           Text(
             user.fullName ?? user.username,
             style: const TextStyle(
@@ -258,7 +429,6 @@ class _ProfileInfo extends StatelessWidget {
             ),
           ),
 
-          // Username + badge de rol
           const SizedBox(height: 4),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -277,7 +447,6 @@ class _ProfileInfo extends StatelessWidget {
             ],
           ),
 
-          // Bio
           if (user.bio != null && user.bio!.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
@@ -295,25 +464,36 @@ class _ProfileInfo extends StatelessWidget {
 
           const SizedBox(height: 16),
 
-          // Botón editar o seguir
-          isOwnProfile
-              ? _EditButton(onTap: onEditTap)
-              : _FollowButton(
-                  isFollowing: isFollowing,
-                  onTap: onFollowTap,
-                ),
+          // Botones según si es perfil propio o ajeno
+          if (isOwnProfile) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _EditButton(onTap: onEditTap),
+                const SizedBox(width: 12),
+                _SignOutButton(),
+              ],
+            ),
+          ] else ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _FollowButton(isFollowing: isFollowing, onTap: onFollowTap),
+                const SizedBox(width: 12),
+                _MessageButton(onTap: onMessageTap),
+              ],
+            ),
+          ],
 
           const SizedBox(height: 20),
-
-          // Estadísticas
-          _ProfileStats(),
+          _ProfileStats(userId: user.id),
         ],
       ),
     );
   }
 }
 
-// ─── AVATAR DEL PERFIL ────────────────────────────────────────────────────
+// ─── AVATAR ───────────────────────────────────────────────────────────────
 class _ProfileAvatar extends ConsumerWidget {
   final UserModel user;
   final bool isOwnProfile;
@@ -335,10 +515,7 @@ class _ProfileAvatar extends ConsumerWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              border: Border.all(
-                color: AppColors.background,
-                width: 3,
-              ),
+              border: Border.all(color: AppColors.background, width: 3),
             ),
             child: user.avatarUrl != null
                 ? ClipOval(
@@ -347,8 +524,6 @@ class _ProfileAvatar extends ConsumerWidget {
                       fit: BoxFit.cover,
                     ),
                   )
-
-                  // Por aquí el cambio
                 : Center(
                     child: Text(
                       user.username[0].toUpperCase(),
@@ -361,8 +536,6 @@ class _ProfileAvatar extends ConsumerWidget {
                     ),
                   ),
           ),
-
-          // Ícono de editar foto si es perfil propio
           if (isOwnProfile)
             Positioned(
               bottom: 0, right: 0,
@@ -371,16 +544,9 @@ class _ProfileAvatar extends ConsumerWidget {
                 decoration: BoxDecoration(
                   color: AppColors.peach,
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.background,
-                    width: 2,
-                  ),
+                  border: Border.all(color: AppColors.background, width: 2),
                 ),
-                child: const Icon(
-                  Icons.camera_alt,
-                  color: Colors.white,
-                  size: 13,
-                ),
+                child: const Icon(Icons.camera_alt, color: Colors.white, size: 13),
               ),
             ),
         ],
@@ -414,20 +580,32 @@ class _ProfileAvatar extends ConsumerWidget {
 }
 
 // ─── ESTADÍSTICAS ─────────────────────────────────────────────────────────
-class _ProfileStats extends StatelessWidget {
-  const _ProfileStats();
+class _ProfileStats extends ConsumerWidget {
+  final String userId;
+  const _ProfileStats({required this.userId});
 
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _StatItem(label: 'Posts', value: '24'),
-        _StatDivider(),
-        _StatItem(label: 'Seguidores', value: '142'),
-        _StatDivider(),
-        _StatItem(label: 'Seguidos', value: '89'),
-      ],
+  Widget build(BuildContext context, WidgetRef ref) {
+    final statsAsync = ref.watch(profileStatsProvider(userId));
+
+    return statsAsync.when(
+      loading: () => const SizedBox(
+        height: 48,
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.peach, strokeWidth: 2),
+        ),
+      ),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (stats) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _StatItem(label: 'Posts', value: '${stats['posts']}'),
+          const _StatDivider(),
+          _StatItem(label: 'Seguidores', value: '${stats['followers']}'),
+          const _StatDivider(),
+          _StatItem(label: 'Seguidos', value: '${stats['following']}'),
+        ],
+      ),
     );
   }
 }
@@ -435,7 +613,6 @@ class _ProfileStats extends StatelessWidget {
 class _StatItem extends StatelessWidget {
   final String label;
   final String value;
-
   const _StatItem({required this.label, required this.value});
 
   @override
@@ -469,14 +646,11 @@ class _StatDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 1, height: 32,
-      color: AppColors.border,
-    );
+    return Container(width: 1, height: 32, color: AppColors.border);
   }
 }
 
-// ─── BOTONES DE ACCIÓN ────────────────────────────────────────────────────
+// ─── BOTONES ──────────────────────────────────────────────────────────────
 class _EditButton extends StatelessWidget {
   final VoidCallback onTap;
   const _EditButton({required this.onTap});
@@ -485,8 +659,7 @@ class _EditButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+      child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.transparent,
@@ -507,10 +680,48 @@ class _EditButton extends StatelessWidget {
   }
 }
 
+class _SignOutButton extends ConsumerWidget {
+  const _SignOutButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return GestureDetector(
+      onTap: () async {
+        await ref.read(authNotifierProvider.notifier).signOut();
+        ref.invalidate(authStateProvider);
+        await Future.microtask(() {});
+        if (context.mounted) context.go('/login');
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.logout_rounded, color: Colors.redAccent, size: 16),
+            SizedBox(width: 6),
+            Text(
+              'Salir',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.redAccent,
+                fontFamily: 'DM Sans',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _FollowButton extends StatefulWidget {
   final bool isFollowing;
   final VoidCallback onTap;
-
   const _FollowButton({required this.isFollowing, required this.onTap});
 
   @override
@@ -583,7 +794,43 @@ class _FollowButtonState extends State<_FollowButton>
   }
 }
 
-// ─── BADGE DE ROL ─────────────────────────────────────────────────────────
+class _MessageButton extends StatelessWidget {
+  final VoidCallback? onTap;
+  const _MessageButton({this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.mint.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: AppColors.mint.withOpacity(0.3)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.chat_bubble_outline_rounded,
+                color: AppColors.mint, size: 16),
+            SizedBox(width: 6),
+            Text(
+              'Mensaje',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: AppColors.mint,
+                fontFamily: 'DM Sans',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _RolePill extends StatelessWidget {
   final String role;
   const _RolePill({required this.role});
@@ -630,10 +877,8 @@ class _PostsGrid extends ConsumerWidget {
         child: CircularProgressIndicator(color: AppColors.peach),
       ),
       error: (e, _) => Center(
-        child: Text(
-          'Error cargando posts',
-          style: TextStyle(color: AppColors.cream.withOpacity(0.4)),
-        ),
+        child: Text('Error cargando posts',
+            style: TextStyle(color: AppColors.cream.withOpacity(0.4))),
       ),
       data: (posts) {
         if (posts.isEmpty) {
@@ -641,18 +886,13 @@ class _PostsGrid extends ConsumerWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.photo_library_outlined,
-                  size: 48,
-                  color: AppColors.cream.withOpacity(0.15),
-                ),
+                Icon(Icons.photo_library_outlined,
+                    size: 48, color: AppColors.cream.withOpacity(0.15)),
                 const SizedBox(height: 12),
                 Text(
                   'Aún no hay publicaciones',
                   style: TextStyle(
-                    color: AppColors.cream.withOpacity(0.3),
-                    fontSize: 14,
-                  ),
+                      color: AppColors.cream.withOpacity(0.3), fontSize: 14),
                 ),
               ],
             ),
@@ -715,13 +955,33 @@ class _PostGridItemState extends State<_PostGridItem>
         scale: _scale,
         child: Container(
           color: AppColors.backgroundLight,
-          child: CachedNetworkImage(
+          child: widget.post.mediaUrls.isNotEmpty
+              ? CachedNetworkImage(
                   imageUrl: widget.post.mediaUrls[0],
                   fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(
-                    color: AppColors.backgroundLight,
-            ),
-          ),
+                  placeholder: (context, url) =>
+                      Container(color: AppColors.backgroundLight),
+                )
+              : Container(
+                  color: AppColors.backgroundLight,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(
+                        widget.post.content ?? '',
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.cream.withOpacity(0.6),
+                          fontFamily: 'DM Sans',
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
         ),
       ),
     );
@@ -729,22 +989,19 @@ class _PostGridItemState extends State<_PostGridItem>
 }
 
 // ─── PESTAÑA VENTURE ──────────────────────────────────────────────────────
-class _VentureTab extends StatelessWidget {
+class _VentureTab extends ConsumerWidget {
   final UserModel user;
   const _VentureTab({required this.user});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (!user.canPost) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.storefront_outlined,
-              size: 48,
-              color: AppColors.cream.withOpacity(0.15),
-            ),
+            Icon(Icons.storefront_outlined,
+                size: 48, color: AppColors.cream.withOpacity(0.15)),
             const SizedBox(height: 12),
             Text(
               'Solo emprendedores y empresarios\ntienen venture',
@@ -760,12 +1017,36 @@ class _VentureTab extends StatelessWidget {
       );
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          // Card del venture
-          Container(
+    final ventureAsync = ref.watch(userVentureProvider(user.id));
+
+    return ventureAsync.when(
+      loading: () => const Center(
+        child: CircularProgressIndicator(color: AppColors.peach, strokeWidth: 2),
+      ),
+      error: (e, _) => Center(
+        child: Text('Error cargando venture',
+            style: TextStyle(color: AppColors.cream.withOpacity(0.4))),
+      ),
+      data: (venture) {
+        if (venture == null) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.storefront_outlined,
+                    size: 48, color: AppColors.cream.withOpacity(0.15)),
+                const SizedBox(height: 12),
+                Text('Aún no tienes un venture',
+                    style: TextStyle(
+                        color: AppColors.cream.withOpacity(0.3), fontSize: 14)),
+              ],
+            ),
+          );
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: AppColors.background,
@@ -782,11 +1063,17 @@ class _VentureTab extends StatelessWidget {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
                         gradient: const LinearGradient(
-                          colors: [AppColors.peach, AppColors.mint],
-                        ),
+                            colors: [AppColors.peach, AppColors.mint]),
                       ),
-                      child: const Center(
-                        child: Text('☕', style: TextStyle(fontSize: 24)),
+                      child: Center(
+                        child: Text(
+                          (venture['name'] as String)[0].toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -794,23 +1081,25 @@ class _VentureTab extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Mi Emprendimiento',
-                            style: TextStyle(
+                          Text(
+                            venture['name'] ?? '',
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                               color: AppColors.cream,
                               fontFamily: 'DM Sans',
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Configura tu venture →',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppColors.peach.withOpacity(0.7),
+                          if (venture['description'] != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              venture['description'],
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.cream.withOpacity(0.5),
+                              ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
@@ -819,42 +1108,32 @@ class _VentureTab extends StatelessWidget {
                 const SizedBox(height: 16),
                 Divider(color: AppColors.border, height: 1),
                 const SizedBox(height: 16),
-                Text(
-                  'Productos',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.5,
-                    color: AppColors.mint,
-                  ),
-                ),
+                Text('PRODUCTOS',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.5,
+                      color: AppColors.mint,
+                    )),
                 const SizedBox(height: 12),
-
-                // Placeholder de productos
                 Center(
                   child: Column(
                     children: [
-                      Icon(
-                        Icons.add_circle_outline_rounded,
-                        size: 40,
-                        color: AppColors.cream.withOpacity(0.15),
-                      ),
+                      Icon(Icons.inventory_2_outlined,
+                          size: 40, color: AppColors.cream.withOpacity(0.15)),
                       const SizedBox(height: 8),
-                      Text(
-                        'Agrega tu primer producto',
-                        style: TextStyle(
-                          color: AppColors.cream.withOpacity(0.3),
-                          fontSize: 13,
-                        ),
-                      ),
+                      Text('Agrega tu primer producto',
+                          style: TextStyle(
+                              color: AppColors.cream.withOpacity(0.3),
+                              fontSize: 13)),
                     ],
                   ),
                 ),
               ],
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -877,7 +1156,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.user.fullName);
-    _bioCtrl  = TextEditingController(text: widget.user.bio);
+    _bioCtrl = TextEditingController(text: widget.user.bio);
   }
 
   @override
@@ -918,7 +1197,6 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Handle
             Center(
               child: Container(
                 width: 36, height: 4,
@@ -929,8 +1207,6 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
                 ),
               ),
             ),
-
-            // Título
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -949,9 +1225,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
                       ? const SizedBox(
                           width: 16, height: 16,
                           child: CircularProgressIndicator(
-                            color: AppColors.peach,
-                            strokeWidth: 2,
-                          ),
+                            color: AppColors.peach, strokeWidth: 2),
                         )
                       : const Text(
                           'Guardar',
@@ -964,8 +1238,6 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
               ],
             ),
             const SizedBox(height: 20),
-
-            // Campo nombre
             TextField(
               controller: _nameCtrl,
               style: const TextStyle(color: AppColors.cream),
@@ -975,8 +1247,6 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
               ),
             ),
             const SizedBox(height: 16),
-
-            // Campo bio
             TextField(
               controller: _bioCtrl,
               maxLines: 3,

@@ -88,17 +88,15 @@ class AuthNotifier extends AsyncNotifier<UserModel?> {
 
   // Login
   // Ejemplo: await ref.read(authNotifierProvider.notifier).signIn(...)
-  Future<void> signIn({
-    required String email,
-    required String password,
-  }) async {
+  Future<void> signIn({required String email, required String password}) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      return await _authService.signIn(
-        email: email,
-        password: password,
-      );
+      final user = await _authService.signIn(email: email, password: password);
+      return user;
     });
+    // Refrescar el estado de sesión
+    ref.invalidate(authStateProvider);
+    ref.invalidate(currentUserProvider);
   }
 
   // Registro
@@ -121,9 +119,9 @@ class AuthNotifier extends AsyncNotifier<UserModel?> {
 
   // Logout
   Future<void> signOut() async {
-    state = const AsyncLoading();
     await _authService.signOut();
-    state = const AsyncData(null);
+    ref.invalidate(authStateProvider);
+    ref.invalidate(currentUserProvider);
   }
 
   // Actualizar perfil

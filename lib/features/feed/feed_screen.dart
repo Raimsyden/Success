@@ -8,8 +8,11 @@ import '../../core/models/post_model.dart';
 import '../../core/models/user_model.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/services/post_service.dart';
-import '../../core/services/rls_test_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+// import '../../core/services/rls_test_service.dart'; Eliminado
 import 'create_post_screen.dart';
+import 'comments_screen.dart';  
+import '../messages/messages_screen.dart';
 
 // ─── PROVIDER DEL FEED ────────────────────────────────────────────────────
 final feedProvider = AsyncNotifierProvider<FeedNotifier, List<PostModel>>(
@@ -116,29 +119,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
           }
         },
       ),
-
-      // Button para ejecutar RLS tests en desarrollo
-      floatingActionButton: FloatingActionButton.small(
-        backgroundColor: Colors.orange.withOpacity(0.8),
-        onPressed: _showRLSTestModal,
-        tooltip: 'RLS Debug Tests',
-        child: const Icon(Icons.bug_report),
-      ),
     );
   }
 
-  // Mostrar modal para ejecutar tests de RLS
-  void _showRLSTestModal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.grey[900],
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => _RLSTestPanel(),
-    );
-  }
 
   // Construir el contenido según la pestaña seleccionada
   Widget _buildContent(
@@ -285,11 +268,16 @@ class _FeedNavbar extends StatelessWidget {
           const Spacer(),
 
           // Iconos de acción
-          _NavIconButton(icon: Icons.search_rounded, onTap: () {}),
-          _NavIconButton(icon: Icons.notifications_outlined, onTap: () {}),
           _NavIconButton(
             icon: Icons.chat_bubble_outline_rounded,
-            onTap: () {},
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const MessagesScreen(),
+                ),
+              );
+            },
           ),
           // avatar para ir al perfil propio
           userAsync.when(
@@ -325,6 +313,7 @@ class _NavIconButton extends StatefulWidget {
 
   @override
   State<_NavIconButton> createState() => _NavIconButtonState();
+  
 }
 
 class _NavIconButtonState extends State<_NavIconButton>
@@ -936,7 +925,14 @@ class _PostActions extends StatelessWidget {
           _ActionButton(
             icon: Icons.chat_bubble_outline_rounded,
             label: 'Comentar',
-            onTap: () {},
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CommentsScreen(post: post),
+                ),
+              );
+            },
           ),
           _ActionButton(
             icon: Icons.ios_share_rounded,
@@ -1273,213 +1269,406 @@ class _LoadMoreTriggerState extends State<_LoadMoreTrigger> {
 }
 
 // ─── TAB EXPLORAR ─────────────────────────────────────────────────────────
-class _ExploreContent extends StatelessWidget {
+// ─── TAB EXPLORAR ─────────────────────────────────────────────────────────
+final allVenturesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final response = await Supabase.instance.client
+      .from('ventures')
+      .select('*, users!owner_id(username, avatar_url, role)')
+      .order('created_at', ascending: false);
+  return List<Map<String, dynamic>>.from(response);
+});
+
+class _ExploreContent extends ConsumerWidget {
   const _ExploreContent();
 
   @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Buscador
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.search_rounded,
-                    color: AppColors.cream.withOpacity(0.3), size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Buscar emprendedores, negocios...',
-                      hintStyle: TextStyle(
-                          color: AppColors.cream.withOpacity(0.3)),
-                      border: InputBorder.none,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final venturesAsync = ref.watch(allVenturesProvider);
+
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.search_rounded,
+                      color: AppColors.cream.withOpacity(0.3), size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      decoration: InputDecoration(
+                        hintText: 'Buscar emprendedores, negocios...',
+                        hintStyle: TextStyle(
+                            color: AppColors.cream.withOpacity(0.3)),
+                        border: InputBorder.none,
+                      ),
+                      style: const TextStyle(color: AppColors.cream),
                     ),
-                    style: const TextStyle(color: AppColors.cream),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 24),
-
-          // Tendencias
-          Text(
-            'Tendencias',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: AppColors.cream,
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Text(
+              'EMPRENDIMIENTOS',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.5,
+                color: AppColors.mint,
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-
-          // Lista de tendencias (placeholder)
-          Column(
-            children: List.generate(
-              5,
-              (i) => Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Tendencia #${i + 1}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.cream,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${(i + 1) * 234} posts',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.cream.withOpacity(0.5),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Icon(Icons.chevron_right,
-                        color: AppColors.cream.withOpacity(0.3)),
-                  ],
+        ),
+        venturesAsync.when(
+          loading: () => const SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(
+                    color: AppColors.peach, strokeWidth: 2),
+              ),
+            ),
+          ),
+          error: (e, _) => SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Text(
+                  'Error cargando emprendimientos',
+                  style: TextStyle(color: AppColors.cream.withOpacity(0.4)),
                 ),
               ),
             ),
           ),
-        ],
-      ),
+          data: (ventures) {
+            if (ventures.isEmpty) {
+              return SliverToBoxAdapter(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      children: [
+                        Icon(Icons.storefront_outlined,
+                            size: 48,
+                            color: AppColors.cream.withOpacity(0.15)),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Aún no hay emprendimientos',
+                          style: TextStyle(
+                              color: AppColors.cream.withOpacity(0.3)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+            return SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (_, i) {
+                  final v = ventures[i];
+                  final owner = v['users'] as Map<String, dynamic>?;
+                  return Column(
+                    children: [
+                      ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        leading: Container(
+                          width: 48, height: 48,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            gradient: const LinearGradient(
+                              colors: [AppColors.peach, AppColors.mint],
+                            ),
+                          ),
+                          child: v['logo_url'] != null
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: CachedNetworkImage(
+                                    imageUrl: v['logo_url'],
+                                    fit: BoxFit.cover,
+                                  ),
+                                )
+                              : Center(
+                                  child: Text(
+                                    (v['name'] as String)[0].toUpperCase(),
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                        ),
+                        title: Text(
+                          v['name'] ?? '',
+                          style: const TextStyle(
+                            color: AppColors.cream,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'DM Sans',
+                          ),
+                        ),
+                        subtitle: owner != null
+                            ? Text(
+                                '@${owner['username']}',
+                                style: TextStyle(
+                                  color: AppColors.cream.withOpacity(0.4),
+                                  fontSize: 12,
+                                ),
+                              )
+                            : null,
+                        trailing: const Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          size: 14,
+                          color: AppColors.mint,
+                        ),
+                        onTap: () => context.go(
+                          '/products/${v['id']}',
+                          extra: {'name': v['name']},
+                        ),
+                      ),
+                      Divider(
+                          color: AppColors.border,
+                          height: 1,
+                          indent: 16,
+                          endIndent: 16),
+                    ],
+                  );
+                },
+                childCount: ventures.length,
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 }
-
 // ─── TAB TIENDA ────────────────────────────────────────────────────────────
-class _ShopContent extends StatelessWidget {
+// ─── TAB TIENDA ────────────────────────────────────────────────────────────
+final myVenturesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final userId = Supabase.instance.client.auth.currentUser?.id;
+  if (userId == null) return [];
+  final response = await Supabase.instance.client
+      .from('ventures')
+      .select()
+      .eq('owner_id', userId)
+      .order('created_at', ascending: false);
+  return List<Map<String, dynamic>>.from(response);
+});
+
+class _ShopContent extends ConsumerWidget {
   const _ShopContent();
 
   @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Mis Negocios',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: AppColors.cream,
-            ),
-          ),
-          const SizedBox(height: 16),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final venturesAsync = ref.watch(myVenturesProvider);
 
-          // Grid de negocios (placeholder)
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
+    return venturesAsync.when(
+      loading: () => const Center(
+        child: CircularProgressIndicator(color: AppColors.peach, strokeWidth: 2),
+      ),
+      error: (e, _) => Center(
+        child: Text('Error',
+            style: TextStyle(color: AppColors.cream.withOpacity(0.4))),
+      ),
+      data: (ventures) => SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Mis Negocios',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.cream,
+                    fontFamily: 'Playfair Display',
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () {}, // TODO: crear venture
+                  icon: const Icon(Icons.add, color: AppColors.peach, size: 18),
+                  label: const Text(
+                    'Nuevo',
+                    style: TextStyle(color: AppColors.peach, fontFamily: 'DM Sans'),
+                  ),
+                ),
+              ],
             ),
-            itemCount: 4,
-            itemBuilder: (context, i) {
-              return Container(
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.border),
+            const SizedBox(height: 16),
+            if (ventures.isEmpty)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(40),
+                  child: Column(
+                    children: [
+                      Icon(Icons.storefront_outlined,
+                          size: 56,
+                          color: AppColors.cream.withOpacity(0.15)),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Aún no tienes negocios',
+                        style: TextStyle(
+                          color: AppColors.cream.withOpacity(0.4),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Column(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.backgroundLight,
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(16),
-                            topRight: Radius.circular(16),
+              )
+            else
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.9,
+                ),
+                itemCount: ventures.length,
+                itemBuilder: (_, i) {
+                  final v = ventures[i];
+                  return GestureDetector(
+                    onTap: () => context.go(
+                      '/products/${v['id']}',
+                      extra: {'name': v['name']},
+                    ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.background,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Column(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [AppColors.peach, AppColors.mint],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: const BorderRadius.only(
+                                  topLeft: Radius.circular(16),
+                                  topRight: Radius.circular(16),
+                                ),
+                              ),
+                              child: v['logo_url'] != null
+                                  ? ClipRRect(
+                                      borderRadius: const BorderRadius.only(
+                                        topLeft: Radius.circular(16),
+                                        topRight: Radius.circular(16),
+                                      ),
+                                      child: CachedNetworkImage(
+                                        imageUrl: v['logo_url'],
+                                        fit: BoxFit.cover,
+                                        width: double.infinity,
+                                      ),
+                                    )
+                                  : Center(
+                                      child: Text(
+                                        (v['name'] as String)[0].toUpperCase(),
+                                        style: const TextStyle(
+                                          fontSize: 36,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                          fontFamily: 'Playfair Display',
+                                        ),
+                                      ),
+                                    ),
+                            ),
                           ),
-                        ),
-                        child: Icon(
-                          Icons.storefront_rounded,
-                          color: AppColors.mint.withOpacity(0.5),
-                          size: 40,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Negocio ${i + 1}',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.cream,
+                          Expanded(
+                            flex: 2,
+                            child: Padding(
+                              padding: const EdgeInsets.all(10),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    v['name'] ?? '',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.cream,
+                                      fontFamily: 'DM Sans',
+                                    ),
+                                  ),
+                                  Text(
+                                    v['description'] ?? 'Sin descripción',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.cream.withOpacity(0.4),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            Text(
-                              '12 productos',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: AppColors.cream.withOpacity(0.5),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
+                  );
+                },
+              ),
+          ],
+        ),
       ),
     );
   }
 }
-
 // ─── TAB PERFIL ────────────────────────────────────────────────────────────
-class _ProfileContent extends StatelessWidget {
+final myPostsCountProvider = FutureProvider<int>((ref) async {
+  final userId = Supabase.instance.client.auth.currentUser?.id;
+  if (userId == null) return 0;
+  final response = await Supabase.instance.client
+      .from('posts')
+      .select('id')
+      .eq('author_id', userId)
+      .eq('is_public', true);
+  return (response as List).length;
+});
+
+class _ProfileContent extends ConsumerWidget {
   final UserModel user;
   const _ProfileContent({required this.user});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final postsCount = ref.watch(myPostsCountProvider);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Avatar
           Avatar(
             url: user.avatarUrl,
             letter: user.username.isNotEmpty
@@ -1488,14 +1677,13 @@ class _ProfileContent extends StatelessWidget {
             size: 80,
           ),
           const SizedBox(height: 16),
-
-          // Nombre y usuario
           Text(
             user.fullName ?? user.username,
             style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
               color: AppColors.cream,
+              fontFamily: 'Playfair Display',
             ),
           ),
           const SizedBox(height: 4),
@@ -1506,10 +1694,8 @@ class _ProfileContent extends StatelessWidget {
               color: AppColors.cream.withOpacity(0.5),
             ),
           ),
-          const SizedBox(height: 8),
-
-          // Bio
-          if (user.bio != null && user.bio!.isNotEmpty)
+          if (user.bio != null && user.bio!.isNotEmpty) ...[
+            const SizedBox(height: 8),
             Text(
               user.bio!,
               textAlign: TextAlign.center,
@@ -1519,77 +1705,42 @@ class _ProfileContent extends StatelessWidget {
                 color: AppColors.cream.withOpacity(0.7),
               ),
             ),
+          ],
           const SizedBox(height: 20),
-
-          // Estadísticas
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _StatItem(label: 'Seguidores', value: '234'),
-              _StatItem(label: 'Siguiendo', value: '567'),
-              _StatItem(label: 'Posts', value: '23'),
+              _StatItem(
+                label: 'Posts',
+                value: postsCount.when(
+                  data: (n) => '$n',
+                  loading: () => '...',
+                  error: (_, __) => '0',
+                ),  
+              ),
+              _StatItem(label: 'Seguidores', value: '0'),
+              _StatItem(label: 'Siguiendo', value: '0'),
             ],
           ),
           const SizedBox(height: 24),
-
-          // Botón editar perfil
           GestureDetector(
-            onTap: () {
-              // Navegar a editar perfil
-            },
+            onTap: () => context.go('/profile/${user.id}'),
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
-                color: AppColors.peach,
+                border: Border.all(color: AppColors.border),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Text(
-                'Editar Perfil',
+                'Ver perfil completo',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: AppColors.background,
+                  color: AppColors.cream,
                   fontWeight: FontWeight.w600,
+                  fontFamily: 'DM Sans',
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Mis posts
-          Text(
-            'Mis Publicaciones',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AppColors.cream,
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Placeholder para posts
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.image_not_supported_outlined,
-                  color: AppColors.cream.withOpacity(0.2),
-                  size: 40,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'No hay publicaciones',
-                  style: TextStyle(
-                    color: AppColors.cream.withOpacity(0.5),
-                  ),
-                ),
-              ],
             ),
           ),
         ],
@@ -1597,7 +1748,6 @@ class _ProfileContent extends StatelessWidget {
     );
   }
 }
-
 class _StatItem extends StatelessWidget {
   final String label;
   final String value;
@@ -1625,262 +1775,5 @@ class _StatItem extends StatelessWidget {
         ),
       ],
     );
-  }
-}
-
-// ─── RLS TEST PANEL ─────────────────────────────────────────────────────
-class _RLSTestPanel extends ConsumerStatefulWidget {
-  @override
-  ConsumerState<_RLSTestPanel> createState() => _RLSTestPanelState();
-}
-
-class _RLSTestPanelState extends ConsumerState<_RLSTestPanel> {
-  bool _isRunning = false;
-  Map<String, dynamic>? _results;
-  String _logs = '';
-
-  @override
-  Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.6,
-      maxChildSize: 0.95,
-      builder: (context, scrollController) => SingleChildScrollView(
-        controller: scrollController,
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'RLS Test Suite',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const Divider(color: Colors.grey),
-            const SizedBox(height: 16),
-
-            // Botón para ejecutar tests
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isRunning ? null : _runTests,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.peach,
-                  disabledBackgroundColor: Colors.grey,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: _isRunning
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(Colors.white),
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Text(
-                        'Run All RLS Tests',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Resultados
-            if (_results != null) ...[
-              Text(
-                'Results:',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              const SizedBox(height: 8),
-              _buildResultsWidget(_results!),
-              const SizedBox(height: 16),
-            ],
-
-            // Logs
-            if (_logs.isNotEmpty) ...[
-              Text(
-                'Debug Logs:',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.black12,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey),
-                ),
-                child: Text(
-                  _logs,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    color: Colors.white70,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildResultsWidget(Map<String, dynamic> results) {
-    final allPassed = results['all_passed'] as bool;
-    final testResults = results['results'] as Map<String, dynamic>;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Status global
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: allPassed ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: allPassed ? Colors.green : Colors.red,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                allPassed ? Icons.check_circle : Icons.error,
-                color: allPassed ? Colors.green : Colors.red,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                allPassed ? 'All tests PASSED ✓' : 'Some tests FAILED ✗',
-                style: TextStyle(
-                  color: allPassed ? Colors.green : Colors.red,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-
-        // Resultados individuales
-        ...testResults.entries.map((entry) {
-          final testName = entry.key;
-          final result = entry.value as Map<String, dynamic>;
-          final success = result['success'] as bool;
-          final details = result['details'] as String?;
-          final error = result['error'] as String?;
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: success ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: success ? Colors.green : Colors.orange,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        success ? Icons.check : Icons.warning,
-                        color: success ? Colors.green : Colors.orange,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        testName.replaceAll('_', ' ').toUpperCase(),
-                        style: TextStyle(
-                          color: success ? Colors.green : Colors.orange,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (details != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      details,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                  if (error != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'Error: $error',
-                      style: const TextStyle(
-                        color: Colors.orange,
-                        fontSize: 11,
-                      ),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          );
-        }),
-      ],
-    );
-  }
-
-  Future<void> _runTests() async {
-    setState(() {
-      _isRunning = true;
-      _logs = 'Ejecutando tests...\n';
-    });
-
-    try {
-      final service = RLSTestService();
-      final results = await service.runAllTests();
-
-      setState(() {
-        _results = results;
-        _logs += '\n✓ Tests completados exitosamente';
-      });
-    } catch (e) {
-      setState(() {
-        _logs += '\n✗ Error durante tests: $e';
-      });
-    } finally {
-      setState(() {
-        _isRunning = false;
-      });
-    }
   }
 }

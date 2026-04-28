@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+// import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
-import 'core/constants/supabase_constants.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+// import 'core/constants/supabase_constants.dart';
 import 'app/app_theme.dart';
-import 'package:timeago/timeago.dart' as timeago;
+// import 'package:timeago/timeago.dart' as timeago;
 import 'core/providers/auth_provider.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/register_screen.dart';
@@ -62,23 +63,18 @@ class _SplashScreen extends StatelessWidget {
 
 // ─── ROUTER COMO PROVIDER ─────────────────────────────────────────────────
 final routerProvider = Provider<GoRouter>((ref) {
+  final notifier = _AuthNotifierListenable(ref);
+  
   return GoRouter(
     initialLocation: '/splash',
+    refreshListenable: notifier,
     redirect: (context, state) {
-      final authAsync = ref.watch(authStateProvider);
+      final authAsync = ref.read(authStateProvider);
       final currentPath = state.matchedLocation;
 
       return authAsync.when(
-        // Mientras verifica → quedarse en splash
-        loading: () {
-          debugPrint('[Router] loading → splash');
-          return currentPath == '/splash' ? null : '/splash';
-        },
-        // Error inesperado → ir a login
-        error: (_, __) {
-          debugPrint('[Router] error → login');
-          return '/login';
-        },
+        loading: () => currentPath == '/splash' ? null : '/splash',
+        error: (_, _) => '/login',
         data: (isLoggedIn) {
           final isAuthPage = currentPath == '/login' ||
               currentPath == '/register' ||
@@ -86,38 +82,19 @@ final routerProvider = Provider<GoRouter>((ref) {
 
           debugPrint('[Router] isLoggedIn=$isLoggedIn, path=$currentPath');
 
-          // Logueado y en pantalla de auth → ir al feed
           if (isLoggedIn && isAuthPage) return '/feed';
-
-          // Sin sesión y en pantalla protegida → ir al login
+          if (!isLoggedIn && currentPath == '/splash') return '/login';
           if (!isLoggedIn && !isAuthPage) return '/login';
-
-          // Todo OK, no redirigir
           return null;
         },
       );
     },
     routes: [
-      GoRoute(
-        path: '/splash',
-        builder: (_, __) => const _SplashScreen(),
-      ),
-      GoRoute(
-        path: '/login',
-        builder: (_, __) => const LoginScreen(),
-      ),
-      GoRoute(
-        path: '/register',
-        builder: (_, __) => const RegisterScreen(),
-      ),
-      GoRoute(
-        path: '/feed',
-        builder: (_, __) => const FeedScreen(),
-      ),
-      GoRoute(
-        path: '/profile',
-        builder: (_, __) => const ProfileScreen(),
-      ),
+      GoRoute(path: '/splash', builder: (_, _) => const _SplashScreen()),
+      GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      GoRoute(path: '/register', builder: (_, _) => const RegisterScreen()),
+      GoRoute(path: '/feed', builder: (_, _) => const FeedScreen()),
+      GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
       GoRoute(
         path: '/profile/:userId',
         builder: (_, state) => ProfileScreen(
@@ -131,25 +108,17 @@ final routerProvider = Provider<GoRouter>((ref) {
           ventureName: state.uri.queryParameters['name'] ?? 'Productos',
         ),
       ),
-      GoRoute(
-        path: '/messages',
-        builder: (_, __) => const MessagesScreen(),
-      ),
+      GoRoute(path: '/messages', builder: (_, _) => const MessagesScreen()),
     ],
   );
 });
 
-// ─── PUNTO DE ENTRADA ──────────────────────────────────────────────────────
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  timeago.setLocaleMessages('es', timeago.EsMessages());
-
-  await Supabase.initialize(
-    url: SupabaseConstants.url,
-    anonKey: SupabaseConstants.anonKey,
-  );
-
-  runApp(const ProviderScope(child: SuccessApp()));
+// Listenable que escucha cambios en authStateProvider
+class _AuthNotifierListenable extends ChangeNotifier {
+  _AuthNotifierListenable(this._ref) {
+    _ref.listen(authStateProvider, (_, _) => notifyListeners());
+  }
+  final Ref _ref;
 }
 
 // ─── WIDGET RAÍZ ──────────────────────────────────────────────────────────
@@ -178,4 +147,27 @@ class SuccessApp extends ConsumerWidget {
       themeMode: ThemeMode.light,
     );
   }
+}
+
+// ─── FUNCIÓN PRINCIPAL ────────────────────────────────────────────────────
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Inicializa Supabase antes de ejecutar la app
+  try { 
+    await Supabase.initialize(
+    url: 'https://uqcxvbapbvfgyvsyfhfz.supabase.co',
+    anonKey: 'sb_publishable_qP7XBwMaoTn3FGnkPJQgvQ_czH_TjMA',
+    
+  );
+    debugPrint('[Main] Supabase inicializado correctamente');
+  } catch (e) {
+    debugPrint('[Main] Error inicializando Supabase: $e');
+  }
+
+  runApp(
+    const ProviderScope(
+      child: SuccessApp(),
+    ),
+  );
 }
