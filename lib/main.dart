@@ -1,117 +1,173 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+// import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'core/constants/supabase_constants.dart';
-import 'app/routes.dart';
+import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+// import 'core/constants/supabase_constants.dart';
+import 'app/app_theme.dart';
+// import 'package:timeago/timeago.dart' as timeago;
+import 'core/providers/auth_provider.dart';
+import 'features/auth/login_screen.dart';
+import 'features/auth/register_screen.dart';
+import 'features/feed/feed_screen.dart';
+import 'features/profile/profile_screen.dart';
+import 'features/products/products_screen.dart';
+import 'features/messages/messages_screen.dart';
 
-// ─── PUNTO DE ENTRADA ──────────────────────────────────────────────────────
-// El async es necesario porque Supabase necesita
-// inicializarse antes de que la app arranque
-void main() async {
+// ─── PANTALLA DE CARGA ─────────────────────────────────────────────────────
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
 
-  // Garantiza que Flutter esté listo antes de inicializar plugins
-  // Siempre debe ser la primera línea si usas async en main()
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Inicializamos Supabase con nuestras credenciales
-  // A partir de aquí podemos usar Supabase en cualquier parte de la app
-  await Supabase.initialize(
-    url: SupabaseConstants.url,
-    anonKey: SupabaseConstants.anonKey,
-  );
-
-  // ProviderScope es el contenedor de Riverpod
-  // DEBE envolver toda la app para que los providers funcionen
-  runApp(
-    const ProviderScope(
-      child: SuccessApp(),
-    ),
-  );
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.backgroundDeep,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            RichText(
+              text: const TextSpan(children: [
+                TextSpan(
+                  text: 'Suc',
+                  style: TextStyle(
+                    fontFamily: 'Playfair Display',
+                    fontSize: 42,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.cream,
+                  ),
+                ),
+                TextSpan(
+                  text: 'cess',
+                  style: TextStyle(
+                    fontFamily: 'Playfair Display',
+                    fontSize: 42,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.peach,
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 32),
+            const CircularProgressIndicator(
+              color: AppColors.peach,
+              strokeWidth: 2.5,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-// ─── WIDGET RAÍZ DE LA APP ────────────────────────────────────────────────
-// ConsumerWidget nos permite acceder a los providers de Riverpod
+// ─── ROUTER COMO PROVIDER ─────────────────────────────────────────────────
+final routerProvider = Provider<GoRouter>((ref) {
+  final notifier = _AuthNotifierListenable(ref);
+  
+  return GoRouter(
+    initialLocation: '/splash',
+    refreshListenable: notifier,
+    redirect: (context, state) {
+      final authAsync = ref.read(authStateProvider);
+      final currentPath = state.matchedLocation;
+
+      return authAsync.when(
+        loading: () => currentPath == '/splash' ? null : '/splash',
+        error: (_, _) => '/login',
+        data: (isLoggedIn) {
+          final isAuthPage = currentPath == '/login' ||
+              currentPath == '/register' ||
+              currentPath == '/splash';
+
+          debugPrint('[Router] isLoggedIn=$isLoggedIn, path=$currentPath');
+
+          if (isLoggedIn && isAuthPage) return '/feed';
+          if (!isLoggedIn && currentPath == '/splash') return '/login';
+          if (!isLoggedIn && !isAuthPage) return '/login';
+          return null;
+        },
+      );
+    },
+    routes: [
+      GoRoute(path: '/splash', builder: (_, _) => const _SplashScreen()),
+      GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      GoRoute(path: '/register', builder: (_, _) => const RegisterScreen()),
+      GoRoute(path: '/feed', builder: (_, _) => const FeedScreen()),
+      GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
+      GoRoute(
+        path: '/profile/:userId',
+        builder: (_, state) => ProfileScreen(
+          userId: state.pathParameters['userId'],
+        ),
+      ),
+      GoRoute(
+        path: '/products/:ventureId',
+        builder: (_, state) => ProductsScreen(
+          ventureId: state.pathParameters['ventureId']!,
+          ventureName: state.uri.queryParameters['name'] ?? 'Productos',
+        ),
+      ),
+      GoRoute(path: '/messages', builder: (_, _) => const MessagesScreen()),
+    ],
+  );
+});
+
+// Listenable que escucha cambios en authStateProvider
+class _AuthNotifierListenable extends ChangeNotifier {
+  _AuthNotifierListenable(this._ref) {
+    _ref.listen(authStateProvider, (_, _) => notifyListeners());
+  }
+  final Ref _ref;
+}
+
+// ─── WIDGET RAÍZ ──────────────────────────────────────────────────────────
 class SuccessApp extends ConsumerWidget {
   const SuccessApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Creamos el router aquí para que tenga acceso a ref
-    // y pueda leer el estado de autenticación
-    final router = createRouter(ref);
+    final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
-      // Nombre de la app
       title: 'Success',
-
-      // Oculta el banner rojo de "DEBUG" en la esquina
       debugShowCheckedModeBanner: false,
-
-      // ─── INTERNACIONALIZACIÓN ────────────────────────────────────────────
-      // Permite que la app soporte múltiples idiomas
+      routerConfig: router,
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      // Idiomas soportados: Español e Inglés
       supportedLocales: const [
         Locale('es'),
         Locale('en'),
       ],
-
-      // ─── TEMA VISUAL ─────────────────────────────────────────────────────
-      theme: ThemeData(
-        // Color principal de la app: azul similar al de Facebook/LinkedIn
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1877F2),
-          brightness: Brightness.light,
-        ),
-        // Material Design 3: el más moderno de Flutter
-        useMaterial3: true,
-
-        // Fuente principal
-        fontFamily: 'Roboto',
-
-        // Estilo del AppBar
-        appBarTheme: const AppBarTheme(
-          centerTitle: false,
-          elevation: 0.5,
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
-        ),
-
-        // Estilo de los botones principales
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF1877F2),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ),
-
-        // Fondo general de la app
-        scaffoldBackgroundColor: const Color(0xFFF0F2F5),
-      ),
-
-      // Tema oscuro (respeta la preferencia del sistema)
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1877F2),
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-        fontFamily: 'Roboto',
-      ),
-
-      // Usa el tema del sistema (claro u oscuro)
-      themeMode: ThemeMode.system,
-
-      // ─── NAVEGACIÓN ──────────────────────────────────────────────────────
-      // RouterConfig conecta GoRouter con MaterialApp
-      routerConfig: router,
+      theme: AppTheme.theme,
+      darkTheme: null,
+      themeMode: ThemeMode.light,
     );
   }
+}
+
+// ─── FUNCIÓN PRINCIPAL ────────────────────────────────────────────────────
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Inicializa Supabase antes de ejecutar la app
+  try { 
+    await Supabase.initialize(
+    url: 'https://uqcxvbapbvfgyvsyfhfz.supabase.co',
+    anonKey: 'sb_publishable_qP7XBwMaoTn3FGnkPJQgvQ_czH_TjMA',
+    
+  );
+    debugPrint('[Main] Supabase inicializado correctamente');
+  } catch (e) {
+    debugPrint('[Main] Error inicializando Supabase: $e');
+  }
+
+  runApp(
+    const ProviderScope(
+      child: SuccessApp(),
+    ),
+  );
 }

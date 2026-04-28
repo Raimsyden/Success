@@ -34,7 +34,7 @@ class UserModel {
       fullName: json['full_name'],
       avatarUrl: json['avatar_url'],
       bio: json['bio'],
-      role: json['role'] ?? 'client',         // Si no tiene rol, es cliente
+      role: json['role'] ?? 'client',         
       isVerified: json['is_verified'] ?? false,
       language: json['language'] ?? 'es',
       createdAt: DateTime.parse(json['created_at']),
